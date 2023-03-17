@@ -90,13 +90,6 @@ func (bot *SynologyChatBot) Answer(userIds []uint, answer openai.ChatCompletionM
 	queryParams.Set("token", bot.botToken)
 
 	uri := baseURL + "?" + queryParams.Encode()
-	/*
-		fuck := func(s string) string {
-			s = strings.Replace(url.QueryEscape(s), "+", " ", -1)
-			s = strings.Replace(s, "%22", `"`, -1)
-			return s
-		}
-	*/
 	payloadEncode := func(input string) []string {
 		r := []rune(input)
 		c := len(r)/2000 + 1
@@ -114,6 +107,9 @@ func (bot *SynologyChatBot) Answer(userIds []uint, answer openai.ChatCompletionM
 		}
 		return res
 	}
+	prefix := fmt.Sprintf("[conv_id: %d, total_token: %d]\n",
+		answer.ConversationID, answer.PromptTokens+answer.CompletionTokens)
+	answer.Content = prefix + answer.Content
 	for _, encoded := range payloadEncode(answer.Content) {
 		if len(encoded) == 0 {
 			continue
