@@ -79,8 +79,34 @@ func (bot *SynologyChatBot) ResetConversation() {
 	bot.CurrentCoversationID = 0
 }
 
-// Answer make a http request to bot's ingoing url, payload is ChatComplationMessage
-func (bot *SynologyChatBot) Answer(userIds []uint, answer openai.ChatCompletionMessage) error {
+func (bot *SynologyChatBot) payloadEncode(input string) []string {
+	r := []rune(input)
+	c := len(r)/2000 + 1
+	res := make([]string, c)
+	// split the input into multiple messages
+	for i, char := range r {
+		pos := i / 2000
+		if char == '"' {
+			res[pos] += string(char)
+		} else if strings.ContainsRune("!#$%&'()*+,/:;=?@[]", char) {
+			res[pos] += url.QueryEscape(string(char))
+		} else {
+			res[pos] += string(char)
+		}
+	}
+	return res
+}
+
+// SimpleAnswer replay simple text to user, used by botconf command response
+func (bot *SynologyChatBot) SimpleAnswer(userIds []uint, text string) error {
+	baseURL := bot.nasDomain + "/webapi/entry.cgi"
+	queryParams := url.Values{}
+	queryParams.Set("api", "SYNO.Chat.External")
+	queryParams.Set("method", "chatbot")
+	queryParams.Set("version", "2")
+	queryParams.Set("token", bot.botToken)
+	uri := baseURL + "?" + queryParams.Encode()
+
 	type AnswerRequest struct {
 		Text    string `json:"text,omitempty"`
 		UserIds []uint `json:"user_ids,omitempty"`
@@ -100,35 +126,7 @@ func (bot *SynologyChatBot) Answer(userIds []uint, answer openai.ChatCompletionM
 		Success bool `json:"success"`
 	}
 
-	baseURL := bot.nasDomain + "/webapi/entry.cgi"
-	queryParams := url.Values{}
-	queryParams.Set("api", "SYNO.Chat.External")
-	queryParams.Set("method", "chatbot")
-	queryParams.Set("version", "2")
-	queryParams.Set("token", bot.botToken)
-
-	uri := baseURL + "?" + queryParams.Encode()
-	payloadEncode := func(input string) []string {
-		r := []rune(input)
-		c := len(r)/2000 + 1
-		res := make([]string, c)
-		// split the input into multiple messages
-		for i, char := range r {
-			pos := i / 2000
-			if char == '"' {
-				res[pos] += string(char)
-			} else if strings.ContainsRune("!#$%&'()*+,/:;=?@[]", char) {
-				res[pos] += url.QueryEscape(string(char))
-			} else {
-				res[pos] += string(char)
-			}
-		}
-		return res
-	}
-	prefix := fmt.Sprintf("[conv_id: %d, total_token: %d]\n",
-		answer.ConversationID, answer.PromptTokens+answer.CompletionTokens)
-	answer.Content = prefix + answer.Content
-	for _, encoded := range payloadEncode(answer.Content) {
+	for _, encoded := range bot.payloadEncode(text) {
 		if len(encoded) == 0 {
 			continue
 		}
@@ -168,6 +166,14 @@ func (bot *SynologyChatBot) Answer(userIds []uint, answer openai.ChatCompletionM
 	return nil
 }
 
+// Answer make a http request to bot's ingoing url, payload is ChatComplationMessage
+func (bot *SynologyChatBot) Answer(userIds []uint, answer openai.ChatCompletionMessage) error {
+	prefix := fmt.Sprintf("[conv_id: %d, total_token: %d]\n",
+		answer.ConversationID, answer.PromptTokens+answer.CompletionTokens)
+	answer.Content = prefix + answer.Content
+	return bot.SimpleAnswer(userIds, answer.Content)
+}
+
 func (bot *SynologyChatBot) Run(address, port string) {
 	type SynChatRequest struct {
 		Token     string `form:"token"`
@@ -205,17 +211,31 @@ func (bot *SynologyChatBot) Run(address, port string) {
 	})
 
 	bot.router.POST("/botconf", func(c *gin.Context) {
-		//fmt.Println(c.Request.Header)
-		body, _ := ioutil.ReadAll(c.Request.Body)
-		fmt.Println(string(body))
-		command := ""
+		type RequestBody struct {
+			Token    string `form:"token"`
+			UserID   uint   `form:"user_id"`
+			Username string `form:"username"`
+			Text     string `form:"text"`
+		}
+		var requestBody RequestBody
+		err := c.Bind(&requestBody)
+		if err != nil {
+			fmt.Println(err)
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		command := strings.TrimPrefix(requestBody.Text, " botconf ")
+		log.Printf("command: %s", command)
 		switch command {
 		case "disable_context":
 			bot.DisableContext()
+			bot.SimpleAnswer([]uint{requestBody.UserID}, "Context disabled")
 		case "enable_context":
 			bot.EnableContext()
+			bot.SimpleAnswer([]uint{requestBody.UserID}, "Context enabled")
 		case "reset_conversation":
 			bot.ResetConversation()
+			bot.SimpleAnswer([]uint{requestBody.UserID}, "Conversation Reseted")
 		default:
 			// do nothing
 		}
