@@ -50,6 +50,7 @@ type SynologyChatBot struct {
 	botToken             string
 	CurrentCoversationID uint
 	nasDomain            string
+	enableContext        bool
 }
 
 func NewSynologyChatBot(backend openai.GptBackend, token string, nasDomain string) *SynologyChatBot {
@@ -59,6 +60,23 @@ func NewSynologyChatBot(backend openai.GptBackend, token string, nasDomain strin
 		botToken:  token,
 		nasDomain: nasDomain,
 	}
+}
+
+// EnableContext enable converstion context for gpt
+func (bot *SynologyChatBot) EnableContext() {
+	bot.enableContext = true
+}
+
+// DisableContext disable converstion context for gpt
+func (bot *SynologyChatBot) DisableContext() {
+	bot.enableContext = false
+	bot.CurrentCoversationID = 0
+}
+
+// ResetConversation reset current conversation,
+// and will generate a new conversation id in next request(only in EnableContext mode)
+func (bot *SynologyChatBot) ResetConversation() {
+	bot.CurrentCoversationID = 0
 }
 
 // Answer make a http request to bot's ingoing url, payload is ChatComplationMessage
@@ -175,7 +193,7 @@ func (bot *SynologyChatBot) Run(address, port string) {
 				log.Print(err)
 				return
 			}
-			if bot.CurrentCoversationID == 0 {
+			if bot.CurrentCoversationID == 0 && bot.enableContext {
 				bot.CurrentCoversationID = answer.ConversationID
 			}
 			err = bot.Answer([]uint{requestBody.UserID}, answer)
@@ -186,12 +204,22 @@ func (bot *SynologyChatBot) Run(address, port string) {
 		}()
 	})
 
-	bot.router.POST("/current", func(c *gin.Context) {
-		fmt.Println(c.Request.Header)
+	bot.router.POST("/botconf", func(c *gin.Context) {
+		//fmt.Println(c.Request.Header)
 		body, _ := ioutil.ReadAll(c.Request.Body)
 		fmt.Println(string(body))
+		command := ""
+		switch command {
+		case "disable_context":
+			bot.DisableContext()
+		case "enable_context":
+			bot.EnableContext()
+		case "reset_conversation":
+			bot.ResetConversation()
+		default:
+			// do nothing
+		}
 		c.Status(http.StatusOK)
-		return
 	})
 
 	err := bot.router.Run(fmt.Sprintf("%s:%s", address, port))
