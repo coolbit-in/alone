@@ -98,9 +98,11 @@ func (b *Gpt3p5) Send(conversationID uint, msg string) (resp ChatCompletionMessa
 
 	// save the newMsg and response to db
 	resp = ChatCompletionMessage{
-		ConversationID: conversationID,
-		Role:           chatResp.Choices[0].Message.Role,
-		Content:        chatResp.Choices[0].Message.Content,
+		ConversationID:   conversationID,
+		Role:             chatResp.Choices[0].Message.Role,
+		Content:          chatResp.Choices[0].Message.Content,
+		PromptTokens:     chatResp.Usage.PromptTokens,
+		CompletionTokens: chatResp.Usage.CompletionTokens,
 	}
 	save := []ChatCompletionMessage{newMsg, resp}
 	if err = b.AddMessages(save); err != nil {

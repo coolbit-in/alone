@@ -15,9 +15,11 @@ func (Conversation) TableName() string {
 
 type ChatCompletionMessage struct {
 	gorm.Model
-	ConversationID uint   `gorm:"index" json:"conversation_id"`
-	Role           string `json:"role"`
-	Content        string `json:"content"`
+	ConversationID   uint   `gorm:"index" json:"conversation_id"`
+	Role             string `json:"role"`
+	Content          string `json:"content"`
+	PromptTokens     int    `json:"prompt_tokens"`
+	CompletionTokens int    `json:"completion_tokens"`
 }
 
 func (ChatCompletionMessage) TableName() string {
