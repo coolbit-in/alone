@@ -52,11 +52,12 @@ type SynologyChatBot struct {
 	nasDomain            string
 }
 
-func NewSynologyChatBot(backend openai.GptBackend, token string) *SynologyChatBot {
+func NewSynologyChatBot(backend openai.GptBackend, token string, nasDomain string) *SynologyChatBot {
 	return &SynologyChatBot{
-		backend:  backend,
-		router:   gin.Default(),
-		botToken: token,
+		backend:   backend,
+		router:    gin.Default(),
+		botToken:  token,
+		nasDomain: nasDomain,
 	}
 }
 
@@ -207,6 +208,7 @@ type Config struct {
 	SqlitePath  string `mapstructure:"sqlite_path,omitempty"`
 	OpenaiToken string `mapstructure:"openai_token"`
 	BotToken    string `mapstructure:"bot_token"`
+	NasDomain   string `mapstructure:"nas_domain"`
 	Address     string `mapstructure:"service_address,omitempty"`
 	Port        string `mapstructure:"service_port,omitempty"`
 	//DatabaseUrl string `mapstructure:"database_url"`
@@ -251,6 +253,6 @@ func main() {
 		log.Fatal(err)
 	}
 	backend := openai.NewGpt3p5(db, config.OpenaiToken)
-	app := NewSynologyChatBot(backend, config.BotToken)
+	app := NewSynologyChatBot(backend, config.BotToken, config.NasDomain)
 	app.Run(config.Address, config.Port)
 }
