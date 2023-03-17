@@ -224,7 +224,7 @@ func (bot *SynologyChatBot) Run(address, port string) {
 			c.Status(http.StatusBadRequest)
 			return
 		}
-		command := strings.TrimPrefix(requestBody.Text, " /botconf ")
+		command := strings.TrimPrefix(requestBody.Text, "/botconf ")
 		log.Printf("command: %s", command)
 		switch command {
 		case "disable_context":
