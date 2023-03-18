@@ -4,13 +4,17 @@ import (
 	"alone/openai"
 	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	l "log"
@@ -44,39 +48,135 @@ func initDB(dbPath string) (*gorm.DB, error) {
 	return db, nil
 }
 
+type Session struct {
+	UserID        uint `json:"user_id"`
+	ConvID        uint `json:"conv_id"`
+	EnableContext bool `json:"enable_context"`
+}
 type SynologyChatBot struct {
-	backend              openai.GptBackend
-	router               *gin.Engine
-	botToken             string
-	CurrentCoversationID uint
-	nasDomain            string
-	enableContext        bool
+	backend  openai.GptBackend
+	router   *gin.Engine
+	botToken string
+	//CurrentCoversationID uint
+	nasDomain string
+	// enableContext bool
+	sessions sync.Map
+}
+
+func (bot *SynologyChatBot) GetSession(userID uint) (Session, bool) {
+	var session Session
+	v, ok := bot.sessions.Load(userID)
+	if !ok {
+		return session, false
+	}
+	session, ok = v.(Session)
+	if !ok {
+		return session, false
+	}
+	return session, true
+}
+
+func (bot *SynologyChatBot) SetSession(userID uint, session Session) {
+	bot.sessions.Store(userID, session)
+}
+
+func (bot *SynologyChatBot) DumpSessions(filePath string) error {
+	// Dump sessionMap to a byte buffer
+	var sessionBuf bytes.Buffer
+	enc := gob.NewEncoder(&sessionBuf)
+	bot.sessions.Range(func(k, v interface{}) bool {
+		session := v.(Session)
+		if err := enc.Encode(session); err != nil {
+			return false
+		}
+		return true
+	})
+
+	// Write byte buffer to file
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if _, err := file.Write(sessionBuf.Bytes()); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (bot *SynologyChatBot) LoadSessions(filePath string) error {
+	// Read session data from file into a byte buffer
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	sessionBytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		return err
+	}
+	// Decode the byte buffer and load sessions into sessionMap
+	var decodedSession Session
+	dec := gob.NewDecoder(bytes.NewReader(sessionBytes))
+	for dec.Decode(&decodedSession) == nil {
+		log.Print(decodedSession.UserID, decodedSession.ConvID, decodedSession.EnableContext)
+		bot.sessions.Store(decodedSession.UserID, decodedSession)
+	}
+	return nil
 }
 
 func NewSynologyChatBot(backend openai.GptBackend, token string, nasDomain string) *SynologyChatBot {
-	return &SynologyChatBot{
+	bot := &SynologyChatBot{
 		backend:   backend,
 		router:    gin.Default(),
 		botToken:  token,
 		nasDomain: nasDomain,
+		sessions:  sync.Map{},
 	}
+	bot.LoadSessions("sessions.gob")
+	return bot
 }
 
 // EnableContext enable converstion context for gpt
-func (bot *SynologyChatBot) EnableContext() {
-	bot.enableContext = true
+func (bot *SynologyChatBot) EnableContext(userID uint) {
+	session, bool := bot.GetSession(userID)
+	if !bool {
+		bot.CreateSession(userID)
+	}
+	session.EnableContext = true
+	bot.SetSession(userID, session)
 }
 
 // DisableContext disable converstion context for gpt
-func (bot *SynologyChatBot) DisableContext() {
-	bot.enableContext = false
-	bot.CurrentCoversationID = 0
+func (bot *SynologyChatBot) DisableContext(userID uint) {
+	session, bool := bot.GetSession(userID)
+	if !bool {
+		bot.CreateSession(userID)
+	}
+	session.ConvID = 0
+	session.EnableContext = false
+	bot.SetSession(userID, session)
 }
 
-// ResetConversation reset current conversation,
+// ResetConversationr reset current conversation,
 // and will generate a new conversation id in next request(only in EnableContext mode)
-func (bot *SynologyChatBot) ResetConversation() {
-	bot.CurrentCoversationID = 0
+func (bot *SynologyChatBot) ResetConversation(userID uint) {
+	session, bool := bot.GetSession(userID)
+	if !bool {
+		bot.CreateSession(userID)
+	}
+	session.ConvID = 0
+	bot.SetSession(userID, session)
+}
+
+// CreateSession creates a new session for a user and adds it to the sessions map. It is called when a user starts a new conversation with the bot.
+func (bot *SynologyChatBot) CreateSession(userID uint) {
+	session := Session{
+		UserID:        userID,
+		ConvID:        0,
+		EnableContext: true,
+	}
+	bot.SetSession(userID, session)
 }
 
 func (bot *SynologyChatBot) payloadEncode(input string) []string {
@@ -194,13 +294,19 @@ func (bot *SynologyChatBot) Run(address, port string) {
 		}
 		c.Status(http.StatusOK)
 		go func() {
-			answer, err := bot.backend.Send(bot.CurrentCoversationID, requestBody.Text)
+			session, ok := bot.GetSession(requestBody.UserID)
+			if !ok {
+				bot.CreateSession(requestBody.UserID)
+				session, _ = bot.GetSession(requestBody.UserID)
+			}
+			answer, err := bot.backend.Send(session.ConvID, requestBody.Text)
 			if err != nil {
 				log.Print(err)
 				return
 			}
-			if bot.CurrentCoversationID == 0 && bot.enableContext {
-				bot.CurrentCoversationID = answer.ConversationID
+			if session.ConvID == 0 && session.EnableContext {
+				session.ConvID = answer.ConversationID
+				bot.SetSession(requestBody.UserID, session)
 			}
 			err = bot.Answer([]uint{requestBody.UserID}, answer)
 			if err != nil {
@@ -228,13 +334,13 @@ func (bot *SynologyChatBot) Run(address, port string) {
 		log.Printf("command: %s", command)
 		switch command {
 		case "disable_context":
-			bot.DisableContext()
+			bot.DisableContext(requestBody.UserID)
 			bot.SimpleAnswer([]uint{requestBody.UserID}, "Context disabled")
 		case "enable_context":
-			bot.EnableContext()
+			bot.EnableContext(requestBody.UserID)
 			bot.SimpleAnswer([]uint{requestBody.UserID}, "Context enabled")
 		case "reset_conversation":
-			bot.ResetConversation()
+			bot.ResetConversation(requestBody.UserID)
 			bot.SimpleAnswer([]uint{requestBody.UserID}, "Conversation Reseted")
 		default:
 			// do nothing
@@ -266,9 +372,6 @@ func initConfig(confPath string) Config {
 	if err != nil {
 		log.Fatal(fmt.Errorf("fatal error config file: %s", err))
 	}
-	//log.Print(viper.GetString("sqlite_path"))
-	//log.Print(viper.GetString("openai_token"))
-	//log.Print(viper.GetString("bot_token"))
 	viper.BindPFlag("sqlite_path", pflag.Lookup("sqlite_path"))
 	viper.BindPFlag("openai_token", pflag.Lookup("openai_token"))
 	viper.BindPFlag("bot_token", pflag.Lookup("bot_token"))
@@ -298,5 +401,12 @@ func main() {
 	}
 	backend := openai.NewGpt3p5(db, config.OpenaiToken)
 	app := NewSynologyChatBot(backend, config.BotToken, config.NasDomain)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		app.DumpSessions("sessions.gob")
+		os.Exit(0)
+	}()
 	app.Run(config.Address, config.Port)
 }
