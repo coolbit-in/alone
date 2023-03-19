@@ -1,7 +1,6 @@
 package main
 
 import (
-	"alone/openai"
 	"bytes"
 	"context"
 	"encoding/gob"
@@ -16,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/coolbit-in/alone/openai"
 
 	l "log"
 

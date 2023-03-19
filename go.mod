@@ -1,4 +1,4 @@
-module alone
+module github.com/coolbit-in/alone
 
 go 1.18
 
