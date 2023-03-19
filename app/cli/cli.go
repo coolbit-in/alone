@@ -197,7 +197,7 @@ func (bot *SynologyChatBot) payloadEncode(input string) []string {
 	return res
 }
 
-// SimpleAnswer replay simple text to user, used by botconf command response
+// SimpleAnswer replay text to user
 func (bot *SynologyChatBot) SimpleAnswer(userIds []uint, text string) error {
 	baseURL := bot.nasDomain + "/webapi/entry.cgi"
 	queryParams := url.Values{}
@@ -266,10 +266,29 @@ func (bot *SynologyChatBot) SimpleAnswer(userIds []uint, text string) error {
 	return nil
 }
 
+func (bot *SynologyChatBot) price(tokenNum int) float64 {
+	price := 0.002
+	return float64(tokenNum) * price / 1000
+}
+
+func (bot *SynologyChatBot) prefix(userID uint, answer openai.ChatCompletionMessage) string {
+	session, bool := bot.GetSession(userID)
+	if !bool {
+		return ""
+	}
+	contextFlag := "disable"
+	if session.EnableContext {
+		contextFlag = "enable"
+	}
+	total := answer.PromptTokens + answer.CompletionTokens
+	prefix := fmt.Sprintf("[conv_id: %d, token: %d, cost: $%f, context: %s]\n",
+		answer.ConversationID, total, bot.price(total), contextFlag)
+	return prefix
+}
+
 // Answer make a http request to bot's ingoing url, payload is ChatComplationMessage
 func (bot *SynologyChatBot) Answer(userIds []uint, answer openai.ChatCompletionMessage) error {
-	prefix := fmt.Sprintf("[conv_id: %d, total_token: %d]\n",
-		answer.ConversationID, answer.PromptTokens+answer.CompletionTokens)
+	prefix := bot.prefix(userIds[0], answer)
 	answer.Content = prefix + answer.Content
 	return bot.SimpleAnswer(userIds, answer.Content)
 }
