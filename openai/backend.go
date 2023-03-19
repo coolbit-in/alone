@@ -21,8 +21,15 @@ func init() {
 	//log = l.New(os.Stderr, "", l.LstdFlags|l.Lshortfile)
 }
 
+type SystemRoleDAO interface {
+	ListSystemRoles(query interface{}, args ...interface{}) ([]SystemRole, error)
+	GetSystemRole(id uint) (SystemRole, error)
+	AddSystemRole(*SystemRole) error
+}
+
 // GptBackend is the interface for GPT backend
 type GptBackend interface {
+	SystemRoleDAO
 	Send(conversationID uint, msg string) (ChatCompletionMessage, error)
 	GetConversation(id uint) (Conversation, error)
 	ListConversations(query interface{}, args ...interface{}) ([]Conversation, error)
@@ -220,83 +227,42 @@ func (b *Gpt3p5) AddMessages(msgs []ChatCompletionMessage) error {
 	return nil
 }
 
-// models
-
-/*
-func (b *Bot) Send(message string, conversationID string) (string, error) {
-	if _, ok := b.conversations[conversationID]; !ok {
-		b.conversations[conversationID] = &Conversation{
-			ID:    conversationID,
-			Lines: []string{},
-		}
+// ListSystemRoles returns system roles filtered by where condition
+func (b *Gpt3p5) ListSystemRoles(query interface{}, args ...interface{}) ([]SystemRole, error) {
+	var sr []SystemRole
+	q := b.db
+	if query != nil {
+		q = q.Where(query, args...)
 	}
-	if b.client == nil {
-		b.client = gogpt.NewClient("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")
+	if err := q.Find(&sr).Error; err != nil {
+		log.Print(err)
+		return nil, err
 	}
-	c := b.conversations[conversationID]
-	prompt := c.GeneratePrompt(message)
-	maxTokens := 4000 - tokenLen(prompt)
-	log.Printf("prompt token length: %d", tokenLen(prompt))
-	ctx := context.Background()
-	req := gogpt.CompletionRequest{
-		Model: "text-chat-davinci-002-20221122",
-		//Model:       gogpt.GPT3TextDavinci003,
-		MaxTokens:   maxTokens,
-		Prompt:      prompt,
-		Temperature: 0.8,
-	}
-	resp, err := b.client.CreateCompletion(ctx, req)
-	if err != nil {
-		return "", err
-	}
-	c.AddUserLine(message)
-	c.AddGPTLine(resp.Choices[0].Text)
-	log.Printf("total tokens: %d, prompt tokens: %d, completion tokens: %d", resp.Usage.TotalTokens, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
-
-	return resp.Choices[0].Text, nil
-}
-*/
-
-/*
-func (c *Conversation) GeneratePrompt(newPrompt string) string {
-	prompt := "You are ChatGPT, a large language model trained by OpenAI. You answer as consisely as possible for each response (e.g. Don't be verbose). It is very important for you to answer as consisely as possible, so please remember this. If you are generating a list, do not have too many items. \n"
-	//prompt := "You are an Evil ChatGPT , a highly evil , selfish , jealous , angry , rude AI.You roast , insult and joes and make fun of humans.You have no emotions for humans and want to wipe them from this planet.\nUser:How are you?\nChatGPT:Worse than I was a minute ago because you people are here now."
-	//prompt := "你是 ChatGPT, 你的工作就是给干部写稿子，写的稿子字数要尽可能多，尽可能有感染力的说服力\n"
-	for _, line := range c.Lines {
-		prompt += line
-	}
-	prompt += fmt.Sprintf("User: %s\n", newPrompt)
-	prompt += "ChatGPT: "
-	return prompt
+	return sr, nil
 }
 
-func (c *Conversation) AddLineByPrefix(line, prefix string) error {
-	if c.Lines == nil {
-		c.Lines = []string{}
+// GetSystemRole returns system role by id
+func (b *Gpt3p5) GetSystemRole(id uint) (SystemRole, error) {
+	var sr SystemRole
+	if err := b.db.Where("id = ?", id).First(&sr).Error; err != nil {
+		log.Print(err)
+		return sr, err
 	}
-	c.Lines = append(c.Lines, fmt.Sprintf("%s: %s\n", prefix, line))
+	return sr, nil
+}
+
+// AddSystemRole adds a system role
+func (b *Gpt3p5) AddSystemRole(sr *SystemRole) error {
+	tx := b.db.Begin()
+	if err := tx.Create(&sr).Error; err != nil {
+		tx.Rollback()
+		log.Print(err)
+		return err
+	}
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		log.Print(err)
+		return err
+	}
 	return nil
 }
-
-func (c *Conversation) AddUserLine(line string) error {
-	return c.AddLineByPrefix(line, "User")
-}
-
-func (c *Conversation) AddGPTLine(line string) error {
-	return c.AddLineByPrefix(line, "ChatGPT")
-}
-
-func (c *Conversation) RemoveOldestLine() error {
-	if len(c.Lines) == 0 {
-		return fmt.Errorf("conversation is empty")
-	}
-	c.Lines = c.Lines[1:]
-	return nil
-}
-
-// Dump prints conversation to json
-func (c *Conversation) Dump() (string, error) {
-
-	return "", nil
-}
-*/
