@@ -40,6 +40,7 @@ type GptBackend interface {
 
 var _ GptBackend = (*Gpt3p5)(nil)
 
+// Gpt3p5 implement the GptBackend
 type Gpt3p5 struct {
 	db     *gorm.DB
 	client *gogpt.Client
@@ -188,6 +189,7 @@ func (b *Gpt3p5) ListConversations(query interface{}, args ...interface{}) ([]Co
 	return cs, nil
 }
 
+// GetMessage returns message by id
 func (b *Gpt3p5) GetMessage(id uint) (ChatCompletionMessage, error) {
 	var m ChatCompletionMessage
 	if err := b.db.Where("id = ?", id).First(&m).Error; err != nil {
@@ -197,6 +199,7 @@ func (b *Gpt3p5) GetMessage(id uint) (ChatCompletionMessage, error) {
 	return m, nil
 }
 
+// AddConversation add a new conversation to db
 func (b *Gpt3p5) AddConversation(c *Conversation) error {
 	tx := b.db.Begin()
 	if err := tx.Create(c).Error; err != nil {
