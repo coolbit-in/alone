@@ -12,6 +12,7 @@ import (
 
 	"github.com/coolbit-in/alone/openai"
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/pflag"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/driver/sqlite"
@@ -251,13 +252,13 @@ func initDB(dbPath string) (*gorm.DB, error) {
 
 func main() {
 	// init backend
-	dbPath := ""
-	openaiToken := ""
-	db, err := initDB(dbPath)
+	dbPath := pflag.StringP("dbpath", "p", "chat.db", "database path")
+	openaiToken := pflag.StringP("openai-token", "t", "", "openai token")
+	db, err := initDB(*dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-	Backend = openai.NewGpt3p5(db, openaiToken)
+	Backend = openai.NewGpt3p5(db, *openaiToken)
 
 	// create gin handler
 	r := gin.Default()
