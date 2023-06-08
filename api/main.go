@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -263,19 +264,37 @@ func main() {
 	// create gin handler
 	r := gin.Default()
 
+	// create tls http server and listen 443 port
 	srv := &http.Server{
-		Addr:    ":80",
+		Addr:    ":443",
 		Handler: r,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS10,
+		},
 	}
 
 	// swagger API docs
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/api/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
+	// backend API
+	r.POST("/conversations", AddConversation)
+	r.GET("/conversations", ListConversations)
+	r.GET("/conversations/:conversation_id", GetConversation)
+
+	r.GET("/system_roles", ListSystemRoles)
+	r.POST("/system_roles", AddSystemRole)
+	r.GET("/system_roles/:id", GetSystemRole)
+
+	r.POST("/messages", AddMessage)
+	r.GET("/messages/:id", GetMessage)
+
 	go func() {
 		// service connections
 		log.Print("start server")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		certFilePath := "cert.pem"
+		keyFilePath := "key.pem"
+		if err := srv.ListenAndServeTLS(certFilePath, keyFilePath); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %s\n", err)
 		}
 	}()
