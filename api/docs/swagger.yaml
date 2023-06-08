@@ -97,6 +97,13 @@ paths:
       consumes:
       - application/json
       description: Add conversation
+      parameters:
+      - description: Conversation
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/openai.Conversation'
       produces:
       - application/json
       responses:

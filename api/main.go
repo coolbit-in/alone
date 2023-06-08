@@ -90,8 +90,9 @@ func ListConversations(c *gin.Context) {
 //	@Tags			conversation
 //	@Accept			json
 //	@Produce		json
-//	@Success		200	{object}	string
-//	@Failure		500	{object}	string
+//	@Param			body	body		openai.Conversation	true	"Conversation"
+//	@Success		200		{object}	string
+//	@Failure		500		{object}	string
 func AddConversation(c *gin.Context) {
 	// bind json body
 	var conv openai.Conversation
@@ -276,7 +277,6 @@ func main() {
 
 	// swagger API docs
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	r.GET("/api/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// backend API
 	r.POST("/conversations", AddConversation)

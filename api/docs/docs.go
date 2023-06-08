@@ -65,6 +65,17 @@ const docTemplate = `{
                     "conversation"
                 ],
                 "summary": "Add conversation",
+                "parameters": [
+                    {
+                        "description": "Conversation",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openai.Conversation"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
