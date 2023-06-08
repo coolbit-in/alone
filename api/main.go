@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/coolbit-in/alone/api/docs"
 	"github.com/coolbit-in/alone/openai"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/pflag"
